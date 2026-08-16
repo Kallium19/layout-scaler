@@ -1,0 +1,235 @@
+# Layout Scaler Webapp — Implementation Plan for Antigravity
+
+This document is a complete build spec. It is written so an AI coding agent can read it top to bottom and produce a working, deployable webapp with no clarifying questions needed. It covers the tech stack, file structure, exact math, UI behavior, and the git commands to push the finished repo to GitHub Pages.
+
+---
+
+## 1. Purpose
+
+A student enters their sheet size, margin, annotation space, and the real world dimensions of a room/furniture layout. The tool computes a single uniform scale factor, applies it to every object's size AND position, and outputs render ready numbers the student can draft by hand or check their CAD drawing against.
+
+---
+
+## 2. Tech stack
+
+Match the existing personal portfolio site style already in use (vanilla stack, no build tools, GitHub Pages friendly).
+
+* HTML5, plain CSS3, vanilla JavaScript (ES6+, no framework, no bundler)
+* No backend. Everything runs client side.
+* Single page app, one `index.html`, with logic split into modules for maintainability
+* Deployed via GitHub Pages from the `main` branch, `/root` or `/docs` folder (agent should default to root)
+
+### File structure
+
+```
+layout-scaler/
+  index.html
+  style.css
+  script.js
+  README.md
+  assets/
+    favicon.svg
+```
+
+Keep it to these four core files. Do not introduce a bundler, npm dependency, or framework. This needs to load instantly on GitHub Pages with zero build step.
+
+---
+
+## 3. Naming conventions (use these exact terms everywhere, UI and code)
+
+| Concept | UI label | JS variable name |
+|---|---|---|
+| Usable sheet space after page margins | Drawable Area | `drawableArea` (`{ length, width }`) |
+| Space reserved for labels/dimension lines | Annotation Space | `annotationSpace` (`{ length, width }`) |
+| Drawable Area minus Annotation Space | Layout Space | `layoutSpace` (`{ length, width }`) |
+| Real world size of the layout being scaled | Reference Size | `referenceSize` (`{ length, width }`) |
+| Computed multiplier | Scale Factor | `scaleFactor` (number) |
+| Sizes/positions after scaling | Final Size / Final Position | `finalSize`, `finalPosition` |
+| Individual furniture/wall entries | Objects | `objects` (array) |
+
+Do not use PL, DS, LD or any other acronym anywhere in the UI or variable names. Full words only.
+
+---
+
+## 4. Math process (exact, in order)
+
+### Step 1: Layout Space
+```
+layoutSpace.length = drawableArea.length - annotationSpace.length
+layoutSpace.width  = drawableArea.width  - annotationSpace.width
+```
+Validation: if either result is <= 0, block calculation and show an error: "Annotation Space is larger than Drawable Area. Reduce your margins or annotation space."
+
+### Step 2: Candidate ratios (test both orientations)
+Compute ratios for the layout as given, and again rotated 90 degrees, then keep whichever orientation produces the larger usable scale factor (this matters because random layouts from a professor's prompt are unpredictable in proportion).
+
+```
+// orientation A: reference as given
+ratioA_length = layoutSpace.length / referenceSize.length
+ratioA_width  = layoutSpace.width  / referenceSize.width
+scaleA = min(ratioA_length, ratioA_width)
+
+// orientation B: reference rotated 90 degrees
+ratioB_length = layoutSpace.length / referenceSize.width
+ratioB_width  = layoutSpace.width  / referenceSize.length
+scaleB = min(ratioB_length, ratioB_width)
+
+chosenOrientation = scaleA >= scaleB ? "A" : "B"
+rawScaleFactor = max(scaleA, scaleB)
+```
+Orientation testing is opt in via a checkbox ("Allow layout rotation to optimize fit"), defaulted ON. If the user turns it off, only orientation A runs.
+
+### Step 3: Snap to standard drafting scale
+Never round up (would overflow the sheet). Round down to the nearest standard scale from this list:
+
+```
+STANDARD_SCALES = [1, 2, 5, 10, 20, 25, 50, 75, 100, 150, 200, 250, 500, 1000]
+```
+These represent "1 : N". Convert `rawScaleFactor` (which is unit per unit, e.g. 0.037) into an equivalent N by taking `1 / rawScaleFactor`, then find the smallest N in the list that is >= that value (smallest N that still fits, i.e. round DOWN in drawing size, which means rounding UP in N):
+
+```
+rawN = 1 / rawScaleFactor
+snappedN = smallest value in STANDARD_SCALES that is >= rawN
+snappedScaleFactor = 1 / snappedN
+```
+Show both: "Maximum fit scale: 1:{rawN.toFixed(1)}" and "Recommended standard scale: 1:{snappedN}". Let the user pick which one to actually use for the final numbers (toggle between "raw max fit" and "standard scale"), since some professors require standard scales and others don't care.
+
+### Step 4: Apply scale factor to every object, size AND position
+Position must be scaled, not just size, or the output is unusable for drafting. Positions are measured from a fixed origin corner (bottom left of the Reference Size bounding box, i.e. `(0,0)` at bottom left).
+
+```
+finalSize.length = object.length * scaleFactor
+finalSize.width  = object.width  * scaleFactor
+finalPosition.x  = object.x * scaleFactor
+finalPosition.y  = object.y * scaleFactor
+```
+If chosenOrientation is "B" (rotated), swap x/y and length/width before applying scaleFactor, and note this swap clearly in the output ("Layout rotated 90° to optimize fit").
+
+### Step 5: Centering offset within Layout Space
+After scaling, the scaled layout's bounding box will be smaller than Layout Space on the non dominant axis. Compute a centering offset so leftover space is split evenly rather than dumped on one edge:
+
+```
+scaledBoundingBox.length = referenceSize.length * scaleFactor  // (post rotation if applicable)
+scaledBoundingBox.width  = referenceSize.width  * scaleFactor
+
+offsetX = (layoutSpace.length - scaledBoundingBox.length) / 2
+offsetY = (layoutSpace.width  - scaledBoundingBox.width)  / 2
+```
+Add `offsetX`/`offsetY` to every object's `finalPosition` before display, so the coordinates given are ready to plot directly onto the sheet from the Drawable Area's origin corner (after also adding the Annotation Space offset on the relevant sides, per the layout convention the student is using).
+
+### Step 6: Unit consistency check
+All inputs must share one unit. Add a single global unit selector (mm, cm, m, in, ft) at the top of the form. Do not accept per field units. Label every input field dynamically with the selected unit, e.g. "Drawable Area Length (mm)".
+
+---
+
+## 5. UI flow / user facing "commands"
+
+The UI is a single vertical form with live recalculation (no separate submit step needed once all required fields are filled, but include an explicit "Calculate" button for clarity and to avoid flicker on partial input).
+
+1. **Unit selector** — dropdown, top of page, applies to all fields
+2. **Drawable Area** — Length, Width inputs
+3. **Annotation Space** — Length, Width inputs
+4. **Reference Size** — Length, Width inputs
+5. **Allow layout rotation to optimize fit** — checkbox, default checked
+6. **Use standard drafting scale** — checkbox, default checked (if unchecked, use raw max fit scale)
+7. **Calculate** button
+8. **Results panel**, appears after calculate:
+   * Layout Space (computed, read only)
+   * Chosen orientation (Original / Rotated 90°)
+   * Raw max fit scale (1:N)
+   * Recommended standard scale (1:N)
+   * Final scale factor being used
+9. **Objects table** — add rows for each furniture/wall item:
+   * Name (text)
+   * Length, Width, X position, Y position (all real world, same unit as above)
+   * "Add Object" button to append rows
+   * Each row shows live computed Final Size and Final Position once Calculate has been run
+   * "Remove" button per row
+10. **Export** button — downloads a CSV or JSON of the objects table with final values, for the student to reference while drafting
+
+No login, no save state required across sessions for v1. Keep it single session, in memory only (matches the "no localStorage" constraint for any future artifact version, and keeps v1 simple).
+
+---
+
+## 6. Validation rules (must implement)
+
+* All numeric fields must be positive numbers, reject zero or negative
+* Block calculation with a clear inline error if Layout Space is <= 0 on either axis
+* Block calculation if Reference Size is <= 0
+* If an object's position plus its size exceeds Reference Size bounds, flag that row with a warning ("This object extends outside the reference layout bounds") but do not block calculation, since the student may still be iterating
+* Round all displayed final values to 2 decimal places, but keep full precision internally for further calculations
+
+---
+
+## 7. Visual style guidance
+
+Match the editorial, clean aesthetic already used on the personal site (per prior work: minimal, generous whitespace, restrained color palette, clear typographic hierarchy). Suggested defaults if the agent needs to pick concrete values:
+
+* Font: system font stack or a single clean sans serif (e.g. Inter, fallback to system ui)
+* One accent color, used sparingly (buttons, active states)
+* Neutral background, dark text, no heavy shadows or gradients
+* Results panel visually distinct from the input form (subtle background tint or border)
+* Fully responsive, usable on a phone since students may check values on the go
+
+---
+
+## 8. Build order for the agent
+
+1. Scaffold `index.html` with the form structure described in section 5, no styling yet
+2. Write `script.js` implementing the math process in section 4 exactly as specified, as small pure functions (one function per step) so they are independently testable
+3. Wire up the DOM: read inputs, call the calculation functions, render results
+4. Implement the objects table (add row / remove row / live recompute)
+5. Implement CSV/JSON export
+6. Write `style.css` per section 7
+7. Add basic input validation per section 6, with inline error messages near the relevant field
+8. Manually test with at least these 3 cases before considering it done:
+   * A layout that fits without rotation
+   * A layout that only fits well when rotated 90°
+   * A layout where Annotation Space exceeds Drawable Area (should show the error, not crash)
+9. Write `README.md` explaining what the tool does, how to use it, and linking the live GitHub Pages URL
+10. Commit and push per section 9
+
+---
+
+## 9. Git / GitHub commands
+
+Run these from inside the `layout-scaler/` project folder. Replace `YOUR_USERNAME` with the actual GitHub username.
+
+```bash
+git init
+git add .
+git commit -m "Initial commit: layout scaler webapp"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/layout-scaler.git
+git push -u origin main
+```
+
+Then enable GitHub Pages:
+
+```
+Repo Settings > Pages > Source: Deploy from a branch > Branch: main > Folder: /root > Save
+```
+
+The live site will be available at:
+```
+https://YOUR_USERNAME.github.io/layout-scaler/
+```
+
+For future changes:
+```bash
+git add .
+git commit -m "describe the change here"
+git push
+```
+
+---
+
+## 10. Out of scope for v1 (note these but do not build them yet)
+
+* Actual 2D canvas rendering of the scaled layout (drawing preview)
+* Saving/loading projects across sessions
+* Multi page / multi sheet support
+* Collaboration or shared links
+* Account system
+
+These are natural v2 additions once the core math and export flow are confirmed working with real students.
