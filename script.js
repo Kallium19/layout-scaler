@@ -5,15 +5,33 @@
 // Standard Drafting Scales (1:N)
 const STANDARD_SCALES = [1, 2, 5, 10, 20, 25, 50, 75, 100, 150, 200, 250, 500, 1000];
 
+// Conversion factors relative to 1 Meter
+const UNIT_TO_METERS = {
+  m: 1.0,
+  cm: 0.01,
+  mm: 0.001,
+  in: 0.0254,
+  ft: 0.3048
+};
+
+/**
+ * Convert value between any two supported length units
+ */
+function convertValue(val, fromUnit, toUnit) {
+  if (fromUnit === toUnit) return val;
+  const valInMeters = val * UNIT_TO_METERS[fromUnit];
+  return valInMeters / UNIT_TO_METERS[toUnit];
+}
+
 // State
 let objectCounter = 0;
 let objectsList = [];
 let currentCalculationResult = null;
 
-// Pure Math Functions (Step 1 to Step 5)
+// Pure Math Functions
 
 /**
- * Step 1: Compute Layout Space
+ * Step 1: Compute Layout Space (in renderUnit)
  */
 function computeLayoutSpace(drawableArea, annotationSpace) {
   const length = drawableArea.length - annotationSpace.length;
@@ -26,20 +44,25 @@ function computeLayoutSpace(drawableArea, annotationSpace) {
 
 /**
  * Step 2: Compute Candidate Ratios (Orientation A vs B)
+ * Converted to unified renderUnit before ratio calculation
  */
-function computeCandidateScales(layoutSpace, referenceSize, allowRotation = true) {
+function computeCandidateScales(layoutSpace, referenceSize, referenceUnit, renderUnit, allowRotation = true) {
   if (referenceSize.length <= 0 || referenceSize.width <= 0) {
     throw new Error("Reference Size must be positive numbers greater than 0.");
   }
 
+  // Convert reference size to renderUnit for unitless ratio comparison
+  const refLenRender = convertValue(referenceSize.length, referenceUnit, renderUnit);
+  const refWidRender = convertValue(referenceSize.width, referenceUnit, renderUnit);
+
   // Orientation A (given)
-  const ratioA_length = layoutSpace.length / referenceSize.length;
-  const ratioA_width = layoutSpace.width / referenceSize.width;
+  const ratioA_length = layoutSpace.length / refLenRender;
+  const ratioA_width = layoutSpace.width / refWidRender;
   const scaleA = Math.min(ratioA_length, ratioA_width);
 
   // Orientation B (rotated 90°)
-  const ratioB_length = layoutSpace.length / referenceSize.width;
-  const ratioB_width = layoutSpace.width / referenceSize.length;
+  const ratioB_length = layoutSpace.length / refWidRender;
+  const ratioB_width = layoutSpace.width / refLenRender;
   const scaleB = Math.min(ratioB_length, ratioB_width);
 
   let chosenOrientation = "A";
@@ -50,19 +73,18 @@ function computeCandidateScales(layoutSpace, referenceSize, allowRotation = true
     rawScaleFactor = scaleB;
   }
 
-  return { scaleA, scaleB, chosenOrientation, rawScaleFactor };
+  return { scaleA, scaleB, chosenOrientation, rawScaleFactor, refLenRender, refWidRender };
 }
 
 /**
- * Step 3: Snap raw scale factor to nearest standard drafting scale
+ * Step 3: Snap raw scale factor to nearest standard drafting scale (1:N)
  */
 function snapToStandardScale(rawScaleFactor) {
-  if (rawScaleFactor <= 0) return { snappedN: 1000, snappedScaleFactor: 1 / 1000 };
+  if (rawScaleFactor <= 0) return { rawN: 1000, snappedN: 1000, snappedScaleFactor: 1 / 1000 };
   
   const rawN = 1 / rawScaleFactor;
   let snappedN = STANDARD_SCALES.find(n => n >= rawN);
   
-  // Fallback if rawN is larger than maximum predefined scale
   if (!snappedN) {
     snappedN = Math.ceil(rawN);
   }
@@ -72,11 +94,11 @@ function snapToStandardScale(rawScaleFactor) {
 }
 
 /**
- * Step 5: Compute Centering Offset
+ * Step 5: Compute Centering Offset (in renderUnit)
  */
-function computeCenteringOffset(layoutSpace, referenceSize, chosenOrientation, activeScaleFactor) {
-  const refLength = chosenOrientation === "B" ? referenceSize.width : referenceSize.length;
-  const refWidth = chosenOrientation === "B" ? referenceSize.length : referenceSize.width;
+function computeCenteringOffset(layoutSpace, refLenRender, refWidRender, chosenOrientation, activeScaleFactor) {
+  const refLength = chosenOrientation === "B" ? refWidRender : refLenRender;
+  const refWidth = chosenOrientation === "B" ? refLenRender : refWidRender;
 
   const scaledBoundingBox = {
     length: refLength * activeScaleFactor,
@@ -92,23 +114,29 @@ function computeCenteringOffset(layoutSpace, referenceSize, chosenOrientation, a
 /**
  * Step 4: Scale an Individual Object
  */
-function scaleObject(obj, activeScaleFactor, chosenOrientation, referenceSize, offset) {
-  // Out of bounds check on unrotated reference size
+function scaleObject(obj, referenceUnit, renderUnit, activeScaleFactor, chosenOrientation, referenceSize, offset) {
+  // Out of bounds check on unrotated reference size in real reference units
   const extendsX = (obj.x + obj.length) > referenceSize.length;
   const extendsY = (obj.y + obj.width) > referenceSize.width;
   const isOutOfBounds = extendsX || extendsY;
 
-  // Swap orientation if Orientation B
-  let effLength = obj.length;
-  let effWidth = obj.width;
-  let effX = obj.x;
-  let effY = obj.y;
+  // Convert raw object size & position from referenceUnit to renderUnit
+  const objLenRender = convertValue(obj.length, referenceUnit, renderUnit);
+  const objWidRender = convertValue(obj.width, referenceUnit, renderUnit);
+  const objXRender = convertValue(obj.x, referenceUnit, renderUnit);
+  const objYRender = convertValue(obj.y, referenceUnit, renderUnit);
+
+  // Swap axes if Orientation B
+  let effLength = objLenRender;
+  let effWidth = objWidRender;
+  let effX = objXRender;
+  let effY = objYRender;
 
   if (chosenOrientation === "B") {
-    effLength = obj.width;
-    effWidth = obj.length;
-    effX = obj.y;
-    effY = obj.x;
+    effLength = objWidRender;
+    effWidth = objLenRender;
+    effX = objYRender;
+    effY = objXRender;
   }
 
   const finalLength = effLength * activeScaleFactor;
@@ -129,9 +157,12 @@ function scaleObject(obj, activeScaleFactor, chosenOrientation, referenceSize, o
 // DOM Event Handlers & Controllers
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Element References
-  const unitSelect = document.getElementById("unit-select");
-  const unitLabels = document.querySelectorAll(".unit-label");
+  // Unit Selectors
+  const refUnitSelect = document.getElementById("reference-unit-select");
+  const renderUnitSelect = document.getElementById("render-unit-select");
+
+  const refUnitLabels = document.querySelectorAll(".ref-unit-label");
+  const renderUnitLabels = document.querySelectorAll(".render-unit-label");
 
   const drawableLengthInput = document.getElementById("drawable-length");
   const drawableWidthInput = document.getElementById("drawable-width");
@@ -160,24 +191,38 @@ document.addEventListener("DOMContentLoaded", () => {
   const exportCsvBtn = document.getElementById("export-csv-btn");
   const exportJsonBtn = document.getElementById("export-json-btn");
 
-  // Initial setup: Add 2 sample objects
-  addObjectRow("Table A", 1200, 800, 500, 500);
-  addObjectRow("Wall Unit B", 2000, 400, 2000, 1000);
+  // Initial Sample Objects (in meters)
+  addObjectRow("Desk Table A", 1.2, 0.8, 0.5, 0.5);
+  addObjectRow("Storage Unit B", 2.0, 0.4, 2.0, 1.0);
 
-  // Unit Selector Change
-  unitSelect.addEventListener("change", () => {
-    const selectedUnit = unitSelect.value;
-    unitLabels.forEach(label => {
-      label.textContent = selectedUnit;
-    });
+  // Update Unit Labels
+  function updateUnitLabels() {
+    const refUnit = refUnitSelect.value;
+    const renderUnit = renderUnitSelect.value;
+
+    refUnitLabels.forEach(label => label.textContent = refUnit);
+    renderUnitLabels.forEach(label => label.textContent = renderUnit);
+  }
+
+  refUnitSelect.addEventListener("change", () => {
+    updateUnitLabels();
+    if (!resultsPanel.classList.contains("hidden")) {
+      runCalculation();
+    }
   });
 
-  // Calculate Button Trigger
+  renderUnitSelect.addEventListener("change", () => {
+    updateUnitLabels();
+    if (!resultsPanel.classList.contains("hidden")) {
+      runCalculation();
+    }
+  });
+
+  // Calculate Trigger
   calculateBtn.addEventListener("click", () => {
     runCalculation();
   });
 
-  // Checkbox live recompute
   allowRotationCheckbox.addEventListener("change", () => {
     if (!resultsPanel.classList.contains("hidden")) {
       runCalculation();
@@ -190,17 +235,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Add Object Row Button
   addObjectBtn.addEventListener("click", () => {
     addObjectRow();
   });
 
-  // Export CSV
   exportCsvBtn.addEventListener("click", () => {
     exportCSV();
   });
 
-  // Export JSON
   exportJsonBtn.addEventListener("click", () => {
     exportJSON();
   });
@@ -211,7 +253,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function runCalculation() {
     clearError();
 
-    // Parse Numeric Inputs
+    const refUnit = refUnitSelect.value;
+    const renderUnit = renderUnitSelect.value;
+
     const drawableArea = {
       length: parseFloat(drawableLengthInput.value),
       width: parseFloat(drawableWidthInput.value)
@@ -227,7 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
       width: parseFloat(referenceWidthInput.value)
     };
 
-    // Validation
+    // Input Validation
     if (isNaN(drawableArea.length) || drawableArea.length <= 0 ||
         isNaN(drawableArea.width) || drawableArea.width <= 0) {
       showError("Drawable Area dimensions must be positive numbers.");
@@ -247,25 +291,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      // Step 1: Layout Space
+      // Step 1: Layout Space in renderUnit
       const layoutSpace = computeLayoutSpace(drawableArea, annotationSpace);
 
-      // Step 2: Orientation & Raw Scale
+      // Step 2: Orientation & Raw Scale (with unit conversion)
       const allowRotation = allowRotationCheckbox.checked;
-      const { chosenOrientation, rawScaleFactor } = computeCandidateScales(layoutSpace, referenceSize, allowRotation);
+      const { chosenOrientation, rawScaleFactor, refLenRender, refWidRender } = computeCandidateScales(
+        layoutSpace,
+        referenceSize,
+        refUnit,
+        renderUnit,
+        allowRotation
+      );
 
       // Step 3: Standard Scale Snapping
       const { rawN, snappedN, snappedScaleFactor } = snapToStandardScale(rawScaleFactor);
 
-      // Select active scale factor
       const useStandard = useStandardScaleCheckbox.checked;
       const activeScaleFactor = useStandard ? snappedScaleFactor : rawScaleFactor;
 
-      // Step 5: Centering Offset
-      const offset = computeCenteringOffset(layoutSpace, referenceSize, chosenOrientation, activeScaleFactor);
+      // Step 5: Centering Offset in renderUnit
+      const offset = computeCenteringOffset(
+        layoutSpace,
+        refLenRender,
+        refWidRender,
+        chosenOrientation,
+        activeScaleFactor
+      );
 
       // Save Calculation State
       currentCalculationResult = {
+        refUnit,
+        renderUnit,
         layoutSpace,
         chosenOrientation,
         rawN,
@@ -276,12 +333,12 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       // Render Results Panel
-      resLayoutSpace.textContent = `${layoutSpace.length.toFixed(2)} × ${layoutSpace.width.toFixed(2)} ${unitSelect.value}`;
+      resLayoutSpace.textContent = `${layoutSpace.length.toFixed(2)} × ${layoutSpace.width.toFixed(2)} ${renderUnit}`;
       resOrientation.textContent = chosenOrientation === "B" ? "Rotated 90° (Swapped Axes)" : "Original (0°)";
       resRawScale.textContent = `1 : ${rawN.toFixed(2)}`;
       resStandardScale.textContent = `1 : ${snappedN}`;
       resActiveScale.textContent = `${activeScaleFactor.toFixed(6)} (1:${(1 / activeScaleFactor).toFixed(2)})`;
-      resCenteringOffset.textContent = `X: ${offset.offsetX.toFixed(2)}, Y: ${offset.offsetY.toFixed(2)} ${unitSelect.value}`;
+      resCenteringOffset.textContent = `X: ${offset.offsetX.toFixed(2)}, Y: ${offset.offsetY.toFixed(2)} ${renderUnit}`;
 
       resultsPanel.classList.remove("hidden");
 
@@ -326,6 +383,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (currentCalculationResult) {
         const scaledObj = scaleObject(
           rawObj,
+          currentCalculationResult.refUnit,
+          currentCalculationResult.renderUnit,
           currentCalculationResult.activeScaleFactor,
           currentCalculationResult.chosenOrientation,
           currentCalculationResult.referenceSize,
@@ -358,7 +417,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /**
    * Add a new object row to table
    */
-  function addObjectRow(name = "", len = 1000, wid = 500, x = 0, y = 0) {
+  function addObjectRow(name = "", len = 1.0, wid = 0.5, x = 0, y = 0) {
     objectCounter++;
     const rowId = `obj_${objectCounter}`;
     const tr = document.createElement("tr");
@@ -379,7 +438,6 @@ document.addEventListener("DOMContentLoaded", () => {
       <td><button class="btn btn-danger remove-btn">Delete</button></td>
     `;
 
-    // Attach listeners for dynamic update
     const inputs = tr.querySelectorAll("input");
     inputs.forEach(input => {
       input.addEventListener("input", () => {
@@ -422,24 +480,25 @@ document.addEventListener("DOMContentLoaded", () => {
     errorMessageDiv.classList.add("hidden");
   }
 
-  // Export CSV Function
   function exportCSV() {
     if (objectsList.length === 0) {
       alert("No object data available to export.");
       return;
     }
 
-    const unit = unitSelect.value;
+    const refUnit = refUnitSelect.value;
+    const renderUnit = renderUnitSelect.value;
+
     const headers = [
       "Name",
-      `Real Length (${unit})`,
-      `Real Width (${unit})`,
-      `Real X (${unit})`,
-      `Real Y (${unit})`,
-      `Final Length (${unit})`,
-      `Final Width (${unit})`,
-      `Final X (${unit})`,
-      `Final Y (${unit})`,
+      `Real Length (${refUnit})`,
+      `Real Width (${refUnit})`,
+      `Real X (${refUnit})`,
+      `Real Y (${refUnit})`,
+      `Final Length (${renderUnit})`,
+      `Final Width (${renderUnit})`,
+      `Final X (${renderUnit})`,
+      `Final Y (${renderUnit})`,
       "Warning"
     ];
 
@@ -460,7 +519,6 @@ document.addEventListener("DOMContentLoaded", () => {
     downloadFile(csvContent, "layout_scaler_objects.csv", "text/csv;charset=utf-8;");
   }
 
-  // Export JSON Function
   function exportJSON() {
     if (objectsList.length === 0) {
       alert("No object data available to export.");
@@ -468,7 +526,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const payload = {
-      unit: unitSelect.value,
+      referenceUnit: refUnitSelect.value,
+      renderUnit: renderUnitSelect.value,
       calculationResult: currentCalculationResult,
       objects: objectsList
     };
@@ -489,6 +548,7 @@ document.addEventListener("DOMContentLoaded", () => {
     URL.revokeObjectURL(url);
   }
 
-  // Run initial calculation on page load
+  // Initial Calculation Run
+  updateUnitLabels();
   runCalculation();
 });
