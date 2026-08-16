@@ -16,17 +16,31 @@
     <main class="app-content">
       <!-- Global Controls -->
       <section class="card-section">
-        <h2>Global Settings</h2>
-        <div class="form-group inline-group">
-          <label for="unit-select"><strong>Unit of Measurement:</strong></label>
-          <select id="unit-select" class="form-control">
-            <option value="mm" selected>Millimeters (mm)</option>
-            <option value="cm">Centimeters (cm)</option>
-            <option value="m">Meters (m)</option>
-            <option value="in">Inches (in)</option>
-            <option value="ft">Feet (ft)</option>
-          </select>
-          <span class="help-text">Applied across all fields and calculations.</span>
+        <h2>Global Settings & Units</h2>
+        <div class="units-grid">
+          <div class="form-group">
+            <label for="reference-unit-select"><strong>Real-World Reference Unit:</strong></label>
+            <select id="reference-unit-select" class="form-control">
+              <option value="m" selected>Meters (m)</option>
+              <option value="cm">Centimeters (cm)</option>
+              <option value="mm">Millimeters (mm)</option>
+              <option value="ft">Feet (ft)</option>
+              <option value="in">Inches (in)</option>
+            </select>
+            <span class="help-text">Applied to Reference Size & real object dimensions.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="render-unit-select"><strong>Sheet / Render Unit:</strong></label>
+            <select id="render-unit-select" class="form-control">
+              <option value="cm">Centimeters (cm)</option>
+              <option value="mm" selected>Millimeters (mm)</option>
+              <option value="in">Inches (in)</option>
+              <option value="m">Meters (m)</option>
+              <option value="ft">Feet (ft)</option>
+            </select>
+            <span class="help-text">Applied to Drawable Area, Margins & output values.</span>
+          </div>
         </div>
       </section>
 
@@ -39,11 +53,11 @@
             <legend>Drawable Area</legend>
             <p class="section-desc">Usable sheet space after page margins</p>
             <div class="form-group">
-              <label for="drawable-length">Length (<span class="unit-label">mm</span>):</label>
+              <label for="drawable-length">Length (<span class="render-unit-label">mm</span>):</label>
               <input type="number" id="drawable-length" class="form-control" step="any" placeholder="e.g. 420" value="420">
             </div>
             <div class="form-group">
-              <label for="drawable-width">Width (<span class="unit-label">mm</span>):</label>
+              <label for="drawable-width">Width (<span class="render-unit-label">mm</span>):</label>
               <input type="number" id="drawable-width" class="form-control" step="any" placeholder="e.g. 297" value="297">
             </div>
           </fieldset>
@@ -53,11 +67,11 @@
             <legend>Annotation Space</legend>
             <p class="section-desc">Space reserved for labels & dimensions</p>
             <div class="form-group">
-              <label for="annotation-length">Length (<span class="unit-label">mm</span>):</label>
+              <label for="annotation-length">Length (<span class="render-unit-label">mm</span>):</label>
               <input type="number" id="annotation-length" class="form-control" step="any" placeholder="e.g. 20" value="20">
             </div>
             <div class="form-group">
-              <label for="annotation-width">Width (<span class="unit-label">mm</span>):</label>
+              <label for="annotation-width">Width (<span class="render-unit-label">mm</span>):</label>
               <input type="number" id="annotation-width" class="form-control" step="any" placeholder="e.g. 20" value="20">
             </div>
           </fieldset>
@@ -67,12 +81,12 @@
             <legend>Reference Size</legend>
             <p class="section-desc">Real-world room / layout dimensions</p>
             <div class="form-group">
-              <label for="reference-length">Length (<span class="unit-label">mm</span>):</label>
-              <input type="number" id="reference-length" class="form-control" step="any" placeholder="e.g. 10000" value="10000">
+              <label for="reference-length">Length (<span class="ref-unit-label">m</span>):</label>
+              <input type="number" id="reference-length" class="form-control" step="any" placeholder="e.g. 10" value="10">
             </div>
             <div class="form-group">
-              <label for="reference-width">Width (<span class="unit-label">mm</span>):</label>
-              <input type="number" id="reference-width" class="form-control" step="any" placeholder="e.g. 5000" value="5000">
+              <label for="reference-width">Width (<span class="ref-unit-label">m</span>):</label>
+              <input type="number" id="reference-width" class="form-control" step="any" placeholder="e.g. 5" value="5">
             </div>
           </fieldset>
         </div>
@@ -132,7 +146,7 @@
           <h2>Objects & Furniture Entries</h2>
           <button id="add-object-btn" class="btn btn-secondary">+ Add Object</button>
         </div>
-        <p class="section-desc">Enter real-world dimensions and positions. Scaled values update automatically after calculation.</p>
+        <p class="section-desc">Enter real-world dimensions (<span class="ref-unit-label">m</span>). Scaled values (<span class="render-unit-label">mm</span>) update automatically.</p>
 
         <div class="table-wrapper">
           <table class="data-table" id="objects-table">
@@ -140,14 +154,14 @@
               <tr>
                 <th>#</th>
                 <th>Name</th>
-                <th>Real Length (<span class="unit-label">mm</span>)</th>
-                <th>Real Width (<span class="unit-label">mm</span>)</th>
-                <th>Real X (<span class="unit-label">mm</span>)</th>
-                <th>Real Y (<span class="unit-label">mm</span>)</th>
-                <th>Final Length (<span class="unit-label">mm</span>)</th>
-                <th>Final Width (<span class="unit-label">mm</span>)</th>
-                <th>Final X (<span class="unit-label">mm</span>)</th>
-                <th>Final Y (<span class="unit-label">mm</span>)</th>
+                <th>Real Length (<span class="ref-unit-label">m</span>)</th>
+                <th>Real Width (<span class="ref-unit-label">m</span>)</th>
+                <th>Real X (<span class="ref-unit-label">m</span>)</th>
+                <th>Real Y (<span class="ref-unit-label">m</span>)</th>
+                <th>Final Length (<span class="render-unit-label">mm</span>)</th>
+                <th>Final Width (<span class="render-unit-label">mm</span>)</th>
+                <th>Final X (<span class="render-unit-label">mm</span>)</th>
+                <th>Final Y (<span class="render-unit-label">mm</span>)</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
