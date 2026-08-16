@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Layout Scaler Webapp</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>Layout Scaler</h1>
+      <p class="subtitle">Drafting & Scaling Utility for Architectural Layouts</p>
+    </header>
+
+    <main class="app-content">
+      <!-- Global Controls -->
+      <section class="card-section">
+        <h2>Global Settings</h2>
+        <div class="form-group inline-group">
+          <label for="unit-select"><strong>Unit of Measurement:</strong></label>
+          <select id="unit-select" class="form-control">
+            <option value="mm" selected>Millimeters (mm)</option>
+            <option value="cm">Centimeters (cm)</option>
+            <option value="m">Meters (m)</option>
+            <option value="in">Inches (in)</option>
+            <option value="ft">Feet (ft)</option>
+          </select>
+          <span class="help-text">Applied across all fields and calculations.</span>
+        </div>
+      </section>
+
+      <!-- Input Parameters -->
+      <section class="card-section">
+        <h2>Layout Parameters</h2>
+        <div class="grid-3col">
+          <!-- Drawable Area -->
+          <fieldset class="fieldset-card">
+            <legend>Drawable Area</legend>
+            <p class="section-desc">Usable sheet space after page margins</p>
+            <div class="form-group">
+              <label for="drawable-length">Length (<span class="unit-label">mm</span>):</label>
+              <input type="number" id="drawable-length" class="form-control" step="any" placeholder="e.g. 420" value="420">
+            </div>
+            <div class="form-group">
+              <label for="drawable-width">Width (<span class="unit-label">mm</span>):</label>
+              <input type="number" id="drawable-width" class="form-control" step="any" placeholder="e.g. 297" value="297">
+            </div>
+          </fieldset>
+
+          <!-- Annotation Space -->
+          <fieldset class="fieldset-card">
+            <legend>Annotation Space</legend>
+            <p class="section-desc">Space reserved for labels & dimensions</p>
+            <div class="form-group">
+              <label for="annotation-length">Length (<span class="unit-label">mm</span>):</label>
+              <input type="number" id="annotation-length" class="form-control" step="any" placeholder="e.g. 20" value="20">
+            </div>
+            <div class="form-group">
+              <label for="annotation-width">Width (<span class="unit-label">mm</span>):</label>
+              <input type="number" id="annotation-width" class="form-control" step="any" placeholder="e.g. 20" value="20">
+            </div>
+          </fieldset>
+
+          <!-- Reference Size -->
+          <fieldset class="fieldset-card">
+            <legend>Reference Size</legend>
+            <p class="section-desc">Real-world room / layout dimensions</p>
+            <div class="form-group">
+              <label for="reference-length">Length (<span class="unit-label">mm</span>):</label>
+              <input type="number" id="reference-length" class="form-control" step="any" placeholder="e.g. 10000" value="10000">
+            </div>
+            <div class="form-group">
+              <label for="reference-width">Width (<span class="unit-label">mm</span>):</label>
+              <input type="number" id="reference-width" class="form-control" step="any" placeholder="e.g. 5000" value="5000">
+            </div>
+          </fieldset>
+        </div>
+
+        <div class="options-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="allow-rotation" checked>
+            Allow layout rotation to optimize fit (90° swap)
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="use-standard-scale" checked>
+            Use standard drafting scale (1:N)
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button id="calculate-btn" class="btn btn-primary">Calculate Scale</button>
+        </div>
+
+        <div id="error-message" class="error-banner hidden"></div>
+      </section>
+
+      <!-- Results Panel -->
+      <section id="results-panel" class="card-section results-section hidden">
+        <h2>Calculation Results</h2>
+        <div class="results-grid">
+          <div class="result-box">
+            <span class="result-label">Computed Layout Space:</span>
+            <span id="res-layout-space" class="result-value">-</span>
+          </div>
+          <div class="result-box">
+            <span class="result-label">Chosen Orientation:</span>
+            <span id="res-orientation" class="result-value">-</span>
+          </div>
+          <div class="result-box">
+            <span class="result-label">Maximum Fit Scale:</span>
+            <span id="res-raw-scale" class="result-value">-</span>
+          </div>
+          <div class="result-box">
+            <span class="result-label">Recommended Standard Scale:</span>
+            <span id="res-standard-scale" class="result-value">-</span>
+          </div>
+          <div class="result-box highlight-box">
+            <span class="result-label">Active Scale Factor Used:</span>
+            <span id="res-active-scale" class="result-value">-</span>
+          </div>
+          <div class="result-box">
+            <span class="result-label">Centering Offset (X, Y):</span>
+            <span id="res-centering-offset" class="result-value">-</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Objects Table -->
+      <section class="card-section">
+        <div class="section-header">
+          <h2>Objects & Furniture Entries</h2>
+          <button id="add-object-btn" class="btn btn-secondary">+ Add Object</button>
+        </div>
+        <p class="section-desc">Enter real-world dimensions and positions. Scaled values update automatically after calculation.</p>
+
+        <div class="table-wrapper">
+          <table class="data-table" id="objects-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Real Length (<span class="unit-label">mm</span>)</th>
+                <th>Real Width (<span class="unit-label">mm</span>)</th>
+                <th>Real X (<span class="unit-label">mm</span>)</th>
+                <th>Real Y (<span class="unit-label">mm</span>)</th>
+                <th>Final Length (<span class="unit-label">mm</span>)</th>
+                <th>Final Width (<span class="unit-label">mm</span>)</th>
+                <th>Final X (<span class="unit-label">mm</span>)</th>
+                <th>Final Y (<span class="unit-label">mm</span>)</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="objects-tbody">
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="export-bar">
+          <span>Export Objects Table:</span>
+          <button id="export-csv-btn" class="btn btn-outline">Export CSV</button>
+          <button id="export-json-btn" class="btn btn-outline">Export JSON</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <p>Layout Scaler &copy; 2026 | Academic Drafting & Scale Computation Tool</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
